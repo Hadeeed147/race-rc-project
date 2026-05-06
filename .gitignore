@@ -1,6 +1,51 @@
+# --- Python ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+build/
+dist/
+
+# --- Virtual envs ---
+.venv/
+venv/
+env/
+ENV/
+
+# --- Jupyter ---
+.ipynb_checkpoints/
+
+# --- Project data + model artifacts ---
 data/*.csv
 models/*.pkl
-__pycache__/
-.ipynb_checkpoints/
-*.pyc
+models/*.joblib
+*.npy
+*.npz
+
+# --- Secrets / credentials ---
+.env
+.env.*
+kaggle.json
+*.pem
+*.key
+
+# --- Frontend (React) ---
 node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+npm-debug.log*
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+
+# --- OS junk ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Logs ---
+*.log
