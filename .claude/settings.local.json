@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python src/preprocessing.py)",
+      "Bash(pip install *)",
+      "Bash(python -c \"import pandas; import sklearn; print\\('pandas:', pandas.__version__\\); print\\('sklearn:', sklearn.__version__\\)\")",
+      "Bash(where python *)",
+      "Bash(where pip *)",
+      "Bash(python -m pip --version)",
+      "Bash(\"C:/Users/Victus/AppData/Local/Programs/Python/Python313/python.exe\" --version)",
+      "Bash(\"C:/Users/Victus/AppData/Local/Programs/Python/Python313/python.exe\" -m pip --version)",
+      "PowerShell(& \"C:\\\\Users\\\\Victus\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python313\\\\python.exe\" --version)",
+      "PowerShell(& \"C:\\\\Users\\\\Victus\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python313\\\\python.exe\" -m pip --version)",
+      "Bash(pip --version)",
+      "PowerShell(Get-ChildItem -Path C:\\\\Python313 -ErrorAction SilentlyContinue | Select-Object Name; \"---\"; Get-ChildItem -Path \"C:\\\\Users\\\\Victus\\\\AppData\\\\Local\\\\Programs\\\\Python\" -ErrorAction SilentlyContinue | Select-Object Name; \"---\"; \\(Get-Command python -All -ErrorAction SilentlyContinue\\) | Select-Object Source)",
+      "Read(//c/Python313/**)",
+      "Read(//c/Users/Victus/AppData/Local/Programs/Python/**)",
+      "Read(//c/Users/Victus/AppData/Local/Microsoft/WindowsApps/**)",
+      "PowerShell($env:PYTHONHOME = \"C:\\\\Users\\\\Victus\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python313\"; python -m pip --version)"
+    ]
+  }
+}
