@@ -1,0 +1,134 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* -------------------------------------------------------------------------- */
+/* Theme tokens. Light is the default; .dark scopes the dark variant.         */
+/* Palette: indigo primary, amber accent, slate neutrals.                     */
+/* -------------------------------------------------------------------------- */
+@layer base {
+  :root {
+    /* Slate-tinted off-white background, near-black text */
+    --background: 220 24% 98%;
+    --foreground: 222 32% 12%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 32% 12%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 32% 12%;
+
+    /* Indigo primary */
+    --primary: 240 73% 58%;
+    --primary-foreground: 0 0% 100%;
+    --primary-soft: 240 80% 96%;
+
+    --secondary: 220 20% 94%;
+    --secondary-foreground: 222 32% 12%;
+
+    /* Amber accent */
+    --accent: 36 96% 56%;
+    --accent-foreground: 30 50% 12%;
+    --accent-soft: 40 92% 94%;
+
+    --muted: 220 18% 94%;
+    --muted-foreground: 220 12% 42%;
+
+    --destructive: 0 78% 56%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 152 60% 38%;
+    --success-foreground: 0 0% 100%;
+
+    --border: 220 16% 88%;
+    --input: 220 16% 88%;
+    --ring: 240 73% 58%;
+
+    --radius: 0.85rem;
+  }
+
+  .dark {
+    --background: 222 28% 8%;
+    --foreground: 220 18% 96%;
+
+    --card: 222 26% 11%;
+    --card-foreground: 220 18% 96%;
+
+    --popover: 222 26% 11%;
+    --popover-foreground: 220 18% 96%;
+
+    --primary: 240 80% 70%;
+    --primary-foreground: 222 28% 8%;
+    --primary-soft: 240 50% 18%;
+
+    --secondary: 222 22% 16%;
+    --secondary-foreground: 220 18% 96%;
+
+    --accent: 36 96% 60%;
+    --accent-foreground: 30 50% 8%;
+    --accent-soft: 36 60% 18%;
+
+    --muted: 222 22% 16%;
+    --muted-foreground: 220 12% 64%;
+
+    --destructive: 0 78% 62%;
+    --destructive-foreground: 0 0% 100%;
+
+    --success: 152 60% 50%;
+    --success-foreground: 222 28% 8%;
+
+    --border: 222 22% 18%;
+    --input: 222 22% 18%;
+    --ring: 240 80% 70%;
+  }
+}
+
+@layer base {
+  * { @apply border-border; }
+  html, body, #root { height: 100%; }
+  body {
+    @apply bg-background text-foreground antialiased font-sans;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+  ::selection { background-color: hsl(var(--primary) / 0.25); }
+
+  /* Subtle gradient backdrop */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background:
+      radial-gradient(ellipse 80% 60% at 50% -10%, hsl(var(--primary) / 0.10), transparent 60%),
+      radial-gradient(ellipse 60% 60% at 100% 100%, hsl(var(--accent) / 0.08), transparent 70%);
+    pointer-events: none;
+  }
+  .dark body::before {
+    background:
+      radial-gradient(ellipse 80% 60% at 50% -10%, hsl(var(--primary) / 0.15), transparent 60%),
+      radial-gradient(ellipse 60% 60% at 100% 100%, hsl(var(--accent) / 0.10), transparent 70%);
+  }
+
+  h1, h2, h3, h4 { @apply tracking-tight; }
+  h1 { @apply text-3xl md:text-4xl font-bold; }
+  h2 { @apply text-xl md:text-2xl font-semibold; }
+  h3 { @apply text-lg font-semibold; }
+}
+
+@layer utilities {
+  .scrollbar-thin::-webkit-scrollbar { width: 8px; }
+  .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 4px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground) / 0.5); }
+
+  .glass {
+    background: hsl(var(--card) / 0.8);
+    backdrop-filter: saturate(160%) blur(10px);
+    -webkit-backdrop-filter: saturate(160%) blur(10px);
+  }
+}

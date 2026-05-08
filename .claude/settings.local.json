@@ -16,7 +16,21 @@
       "Read(//c/Python313/**)",
       "Read(//c/Users/Victus/AppData/Local/Programs/Python/**)",
       "Read(//c/Users/Victus/AppData/Local/Microsoft/WindowsApps/**)",
-      "PowerShell($env:PYTHONHOME = \"C:\\\\Users\\\\Victus\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python313\"; python -m pip --version)"
+      "PowerShell($env:PYTHONHOME = \"C:\\\\Users\\\\Victus\\\\AppData\\\\Local\\\\Programs\\\\Python\\\\Python313\"; python -m pip --version)",
+      "Bash(grep -qE \"^=+$.*Summary|^Summary|Traceback|^Error|MemoryError\" \"C:/Users/Victus/AppData/Local/Temp/claude/D--FAST-SEM-6-AI-LAB-Project/7b071366-e1e8-4935-ab78-ec3175a703b5/tasks/by98c2gkq.output\")",
+      "Bash(grep -qE \"^=+$\" \"C:/Users/Victus/AppData/Local/Temp/claude/D--FAST-SEM-6-AI-LAB-Project/7b071366-e1e8-4935-ab78-ec3175a703b5/tasks/by98c2gkq.output\")",
+      "Bash(npm --version)",
+      "PowerShell(Get-Process python, node -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowTitle -eq '' -or $_.ProcessName -in 'python','node' } | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 500; \"Killed.\")",
+      "Bash(curl -sS http://localhost:5173/ -o /dev/null -w \"HTTP %{http_code}\\\\n\")",
+      "Bash(curl -sS \"http://localhost:5173/src/App.jsx\")",
+      "Bash(curl -sS \"http://localhost:5173/src/index.css\")",
+      "Bash(curl -sS \"http://localhost:5173/src/main.jsx\")",
+      "Bash(curl -sS http://localhost:5173/src/pages/__TRACKED_VAR__.jsx -w '\\\\nHTTP %{http_code}\\\\n')",
+      "Bash(curl -sS -o /dev/null -w '%{http_code}' http://localhost:5173/src/lib/__TRACKED_VAR__.js)",
+      "Bash(curl -sS -o /dev/null -w '%{http_code}' http://localhost:5173/src/components/ui/__TRACKED_VAR__.jsx)",
+      "Bash(curl -sS \"http://localhost:5173/src/components/NavBar.jsx\")",
+      "Bash(curl -sS \"http://localhost:5173/node_modules/.vite/deps/lucide-react.js?import\" -o /dev/null -w \"lucide-react bundled: HTTP %{http_code}\\\\n\")",
+      "Bash(curl -sS \"http://localhost:5173/node_modules/.vite/deps/lucide-react.js?v=a1118f32\")"
     ]
   }
 }

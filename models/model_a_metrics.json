@@ -1,0 +1,66 @@
+[
+  {
+    "name": "Logistic Regression",
+    "accuracy": 0.6709627859337658,
+    "macro_f1": 0.540838554873976,
+    "exact_match": 0.30818254239217024,
+    "confusion_matrix": [
+      [
+        21147,
+        5214
+      ],
+      [
+        6351,
+        2436
+      ]
+    ]
+  },
+  {
+    "name": "LinearSVC (calibrated)",
+    "accuracy": 0.6689712074655741,
+    "macro_f1": 0.5380593675710084,
+    "exact_match": 0.3039717764879936,
+    "confusion_matrix": [
+      [
+        21112,
+        5249
+      ],
+      [
+        6386,
+        2401
+      ]
+    ]
+  },
+  {
+    "name": "ComplementNB",
+    "accuracy": 0.6629395698190509,
+    "macro_f1": 0.5296424003105917,
+    "exact_match": 0.2947536132923637,
+    "confusion_matrix": [
+      [
+        21006,
+        5355
+      ],
+      [
+        6492,
+        2295
+      ]
+    ]
+  },
+  {
+    "name": "Ensemble (avg)",
+    "accuracy": 0.6727836576761125,
+    "macro_f1": 0.5433795261224037,
+    "exact_match": 0.3113690679412769,
+    "confusion_matrix": [
+      [
+        21179,
+        5182
+      ],
+      [
+        6319,
+        2468
+      ]
+    ]
+  }
+]

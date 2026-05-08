@@ -1,0 +1,90 @@
+{
+  "val_set_size": 8787,
+  "option_rows": 35148,
+  "model_a": [
+    {
+      "name": "Logistic Regression",
+      "accuracy": 0.6709627859337658,
+      "macro_f1": 0.540838554873976,
+      "exact_match": 0.30818254239217024,
+      "confusion_matrix": [
+        [
+          21147,
+          5214
+        ],
+        [
+          6351,
+          2436
+        ]
+      ]
+    },
+    {
+      "name": "LinearSVC (calibrated)",
+      "accuracy": 0.6689712074655741,
+      "macro_f1": 0.5380593675710084,
+      "exact_match": 0.3039717764879936,
+      "confusion_matrix": [
+        [
+          21112,
+          5249
+        ],
+        [
+          6386,
+          2401
+        ]
+      ]
+    },
+    {
+      "name": "ComplementNB",
+      "accuracy": 0.6629395698190509,
+      "macro_f1": 0.5296424003105917,
+      "exact_match": 0.2947536132923637,
+      "confusion_matrix": [
+        [
+          21006,
+          5355
+        ],
+        [
+          6492,
+          2295
+        ]
+      ]
+    },
+    {
+      "name": "Ensemble (avg)",
+      "accuracy": 0.6727836576761125,
+      "macro_f1": 0.5433795261224037,
+      "exact_match": 0.3113690679412769,
+      "confusion_matrix": [
+        [
+          21179,
+          5182
+        ],
+        [
+          6319,
+          2468
+        ]
+      ]
+    }
+  ],
+  "model_b": {
+    "distractors": {
+      "n_questions": 200,
+      "bleu": 0.0011159557458027775,
+      "rouge1_f": 0.10118973292502705,
+      "rouge2_f": 0.006867845117845118,
+      "rougeL_f": 0.10085639959169371,
+      "meteor": 0.07698282422439691,
+      "precision": 0.27108333333333334,
+      "recall": 0.10699454426292661,
+      "f1": 0.14634865766328614
+    },
+    "hints": {
+      "n_questions": 187,
+      "precision_at_1": 0.026737967914438502,
+      "precision_at_3": 0.15508021390374332,
+      "r2_scorer": -4.03404314606445
+    },
+    "n_samples": 200
+  }
+}
