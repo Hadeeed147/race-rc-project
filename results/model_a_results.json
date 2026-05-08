@@ -1,0 +1,50 @@
+[
+  {
+    "model": "Logistic Regression",
+    "accuracy": 0.5295,
+    "macro_f1": 0.4995,
+    "exact_match": 0.3541,
+    "confusion_matrix": [
+      [
+        13608,
+        12747
+      ],
+      [
+        3785,
+        5000
+      ]
+    ]
+  },
+  {
+    "model": "SVM (Linear)",
+    "accuracy": 0.5504,
+    "macro_f1": 0.5129,
+    "exact_match": 0.3651,
+    "confusion_matrix": [
+      [
+        14546,
+        11809
+      ],
+      [
+        3991,
+        4794
+      ]
+    ]
+  },
+  {
+    "model": "Ensemble (Soft Vote)",
+    "accuracy": 0.5384,
+    "macro_f1": 0.5046,
+    "exact_match": 0.3619,
+    "confusion_matrix": [
+      [
+        14047,
+        12308
+      ],
+      [
+        3914,
+        4871
+      ]
+    ]
+  }
+]
