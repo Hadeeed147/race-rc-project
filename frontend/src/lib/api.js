@@ -45,13 +45,14 @@ async function fetchJSON(path, { method = 'GET', body, timeoutMs = DEFAULT_TIMEO
   }
 }
 
-export const getHealth     = ()                          => fetchJSON('/healthz')
-export const getSample     = ()                          => fetchJSON('/sample')
-export const generateQuiz  = (article)                   => fetchJSON('/generate',    { method: 'POST', body: { article } })
-export const predictAnswer = ({ article, question, options }) =>
+export const getHealth             = ()                          => fetchJSON('/healthz')
+export const getSample             = ()                          => fetchJSON('/sample')
+export const getSampleWithQuestion = ()                          => fetchJSON('/sample_with_question')
+export const generateQuiz          = (article)                   => fetchJSON('/generate',    { method: 'POST', body: { article } })
+export const predictAnswer         = ({ article, question, options }) =>
   fetchJSON('/predict', { method: 'POST', body: { article, question, options } })
-export const getDistractors = (article, correct_answer) =>
+export const getDistractors        = (article, correct_answer) =>
   fetchJSON('/distractors', { method: 'POST', body: { article, correct_answer } })
-export const getHints      = (article, question)         =>
+export const getHints              = (article, question)         =>
   fetchJSON('/hints', { method: 'POST', body: { article, question } })
-export const getAnalytics  = ()                          => fetchJSON('/analytics')
+export const getAnalytics          = ()                          => fetchJSON('/analytics')

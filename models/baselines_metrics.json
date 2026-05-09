@@ -1,0 +1,38 @@
+{
+  "gpu_used": "RTX 3050 6GB",
+  "batch_size": 8,
+  "max_len": 256,
+  "n_train_options": 50000,
+  "bert_lr": {
+    "accuracy": 0.6331227950381245,
+    "macro_f1": 0.48803399611758935,
+    "exact_match": 0.233071583020371,
+    "confusion_matrix": [
+      [
+        20482,
+        5879
+      ],
+      [
+        7016,
+        1771
+      ]
+    ],
+    "embedding_time_s": 1268.17,
+    "lr_fit_time_s": 10.53,
+    "n_train_options": 50000,
+    "n_val_options": 35148
+  },
+  "t5_small": {
+    "bleu": 0.008654236502028973,
+    "rouge_l": 0.11402737988860821,
+    "meteor": 0.0777855284520902,
+    "n_samples": 200,
+    "inference_time_s": 21.23
+  },
+  "template_generator": {
+    "bleu": 0.0024391900721555844,
+    "rouge_l": 0.10618075265545988,
+    "meteor": 0.05517249881011949,
+    "n_samples": 200
+  }
+}

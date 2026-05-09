@@ -1,0 +1,86 @@
+{
+  "ensemble_test": {
+    "accuracy": 0.671844770683965,
+    "macro_f1": 0.5417398765369913,
+    "exact_match": 0.30829634687606694,
+    "n_questions": 8787,
+    "confusion_matrix": [
+      [
+        21171,
+        5190
+      ],
+      [
+        6344,
+        2443
+      ]
+    ],
+    "classification_report": {
+      "wrong (0)": {
+        "precision": 0.7694348537161548,
+        "recall": 0.8031182428587686,
+        "f1-score": 0.7859158066671617,
+        "support": 26361.0
+      },
+      "correct (1)": {
+        "precision": 0.3200576444386218,
+        "recall": 0.2780243541595539,
+        "f1-score": 0.29756394640682093,
+        "support": 8787.0
+      },
+      "accuracy": 0.671844770683965,
+      "macro avg": {
+        "precision": 0.5447462490773883,
+        "recall": 0.5405712985091613,
+        "f1-score": 0.5417398765369913,
+        "support": 35148.0
+      },
+      "weighted avg": {
+        "precision": 0.6570905513967715,
+        "recall": 0.671844770683965,
+        "f1-score": 0.6638278416020764,
+        "support": 35148.0
+      }
+    }
+  },
+  "model_b_test": {
+    "distractors": {
+      "n_questions": 200,
+      "bleu": 0.0011096721016657062,
+      "rouge1_f": 0.09035165213619582,
+      "rouge2_f": 0.0058784271284271295,
+      "rougeL_f": 0.09006778785233154,
+      "meteor": 0.06530892444905757,
+      "precision": 0.2517857142857143,
+      "recall": 0.09501667258645047,
+      "f1": 0.13126402470482207
+    },
+    "hints": {
+      "n_questions": 195,
+      "precision_at_1": 0.07179487179487179,
+      "precision_at_3": 0.18461538461538463,
+      "r2_scorer": -3.5106782061744664
+    },
+    "n_samples": 200
+  },
+  "bert_lr_test": {
+    "accuracy": 0.6344599977239104,
+    "macro_f1": 0.4895330270285473,
+    "exact_match": 0.23591669511778765,
+    "n_questions": 8787,
+    "confusion_matrix": [
+      [
+        20514,
+        5847
+      ],
+      [
+        7001,
+        1786
+      ]
+    ]
+  },
+  "figures": [
+    "D:\\FAST\\SEM 6\\AI LAB\\Project\\notebooks\\figures\\final_confusion_matrix.png",
+    "D:\\FAST\\SEM 6\\AI LAB\\Project\\notebooks\\figures\\final_model_comparison.png",
+    "D:\\FAST\\SEM 6\\AI LAB\\Project\\notebooks\\figures\\final_metric_breakdown.png"
+  ]
+}

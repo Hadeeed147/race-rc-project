@@ -1,13 +1,25 @@
+# --- core data / ML ---
 pandas==2.2.3
 numpy==2.2.2
 scipy==1.14.1
 scikit-learn==1.6.1
 imbalanced-learn==0.13.0
+joblib==1.4.2
+
+# --- backend ---
 fastapi==0.115.6
 uvicorn==0.32.1
-joblib==1.4.2
+
+# --- notebooks + plots ---
 jupyter==1.1.1
 matplotlib==3.10.0
 seaborn==0.13.2
+
+# --- text-eval metrics ---
 nltk==3.9.1
 rouge-score==0.1.2
+
+# --- (optional, GPU) neural baselines for src/baselines.py ---
+# Install separately so CPU-only users don't pull a 1.5 GB wheel:
+#   python -m pip install torch --index-url https://download.pytorch.org/whl/cu121
+#   python -m pip install transformers==4.46.3 sentencepiece==0.2.0

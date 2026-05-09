@@ -22,6 +22,7 @@ Saves models/hint_scorer.pkl. Prints sample outputs on 5 val rows.
 import os
 import re
 import time
+from typing import List
 import joblib
 import numpy as np
 import pandas as pd
@@ -40,6 +41,11 @@ STOPWORDS = set(ENGLISH_STOP_WORDS)
 # ---------- Helpers ----------
 TOK_RE = re.compile(r"[A-Za-z]{3,}")
 SENT_RE = re.compile(r"(?<=[.!?])\s+")
+# 1-3 capitalized words OR 2-3 lowercase words. Used for noun-phrase distractors.
+NP_PATTERN = re.compile(
+    r"\b(?:[A-Z][a-z]+\s+){0,2}[A-Z][a-z]+\b|"
+    r"\b(?:[a-z]+\s+){1,2}[a-z]+\b"
+)
 
 
 def tokenize(text):
@@ -52,11 +58,33 @@ def split_sentences(text):
     return [s.strip() for s in SENT_RE.split(text) if s.strip()]
 
 
-# ---------- Distractor generation ----------
-def extract_distractors(article, correct_answer, vectorizer, top_k=3,
-                        max_candidates=60, diversity_threshold=0.7):
+def extract_noun_phrases(article, max_words=3, min_words=2):
+    """Pull 2–3 word noun phrases from the article via the NP_PATTERN regex.
+
+    Filtering rules: must be `min_words..max_words` long; first and last
+    tokens cannot be stopwords; phrase must be unique (case-insensitive).
+    """
     if not isinstance(article, str) or not article.strip():
         return []
+    seen, out = set(), []
+    for m in NP_PATTERN.finditer(article):
+        phrase = m.group(0).strip()
+        words = phrase.split()
+        if not (min_words <= len(words) <= max_words):
+            continue
+        if words[0].lower() in STOPWORDS or words[-1].lower() in STOPWORDS:
+            continue
+        key = phrase.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(phrase)
+    return out
+
+
+def _single_token_fallback(article, correct_answer, vectorizer, k):
+    """The Session-2 single-token / bigram extractor, used to backfill
+    when noun-phrase candidates are too few. Same scoring + diversity logic."""
     tokens = tokenize(article)
     if len(tokens) < 5:
         return []
@@ -67,30 +95,90 @@ def extract_distractors(article, correct_answer, vectorizer, top_k=3,
     cand_pool = [c for c in cand_pool if c and c.lower() != ans_low and ans_low not in c.lower()]
     if not cand_pool:
         return []
-    cand_pool = cand_pool[:max_candidates]
-
+    cand_pool = cand_pool[:60]
     cand_vecs = vectorizer.transform(cand_pool)
     ans_vec = vectorizer.transform([correct_answer or ""])
     sims = cosine_similarity(cand_vecs, ans_vec).ravel()
-
-    # Rank by similarity descending; apply diversity penalty
     order = np.argsort(-sims)
-    selected = []
-    selected_vecs = []
+    selected, selected_vecs = [], []
     for j in order:
-        if len(selected) >= top_k:
+        if len(selected) >= k:
             break
         v = cand_vecs[j]
         if not selected_vecs:
-            selected.append(cand_pool[j])
+            selected.append(cand_pool[j]); selected_vecs.append(v); continue
+        if max(cosine_similarity(v, sv)[0, 0] for sv in selected_vecs) < 0.7:
+            selected.append(cand_pool[j]); selected_vecs.append(v)
+    return selected
+
+
+# ---------- Distractor generation ----------
+def extract_distractors(article, correct_answer, vectorizer, top_k=3,
+                        max_candidates=60, diversity_threshold=0.7):
+    """Multi-word noun-phrase candidates (preferred) ranked by TF-IDF cosine
+    similarity to the correct answer + diversity penalty + substring filters.
+    Falls back to single-token candidates only if the NP pool runs out."""
+    if not isinstance(article, str) or not article.strip():
+        return []
+
+    ans_low = (correct_answer or "").strip().lower()
+    np_pool = extract_noun_phrases(article)
+    # Drop phrases that are substrings of the correct answer (or vice versa)
+    if ans_low:
+        np_pool = [
+            p for p in np_pool
+            if p.lower() != ans_low
+            and p.lower() not in ans_low
+            and ans_low not in p.lower()
+        ]
+    np_pool = np_pool[:max_candidates]
+
+    selected: List[str] = []
+    selected_vecs = []
+    if np_pool:
+        cand_vecs = vectorizer.transform(np_pool)
+        ans_vec = vectorizer.transform([correct_answer or ""])
+        sims = cosine_similarity(cand_vecs, ans_vec).ravel()
+        order = np.argsort(-sims)
+
+        for j in order:
+            if len(selected) >= top_k:
+                break
+            cand = np_pool[j]
+            cand_low = cand.lower()
+            cand_words = cand.split()
+
+            # length / stopword guards
+            if len(cand_words) < 2:
+                continue
+            if cand_words[0].lower() in STOPWORDS or cand_words[-1].lower() in STOPWORDS:
+                continue
+            # don't pick something that is substring of, or contains, an
+            # already-selected distractor
+            if any(cand_low in s.lower() or s.lower() in cand_low for s in selected):
+                continue
+            # diversity penalty (vector level)
+            v = cand_vecs[j]
+            if selected_vecs:
+                if max(cosine_similarity(v, sv)[0, 0] for sv in selected_vecs) >= diversity_threshold:
+                    continue
+            selected.append(cand)
             selected_vecs.append(v)
-            continue
-        max_sim_to_picked = max(
-            cosine_similarity(v, sv)[0, 0] for sv in selected_vecs
-        )
-        if max_sim_to_picked < diversity_threshold:
-            selected.append(cand_pool[j])
-            selected_vecs.append(v)
+
+    # Backfill with the legacy single-token / bigram extractor if needed.
+    if len(selected) < top_k:
+        backfill = _single_token_fallback(article, correct_answer, vectorizer,
+                                          k=top_k - len(selected) + 2)
+        for b in backfill:
+            if len(selected) >= top_k:
+                break
+            if not b:
+                continue
+            blow = b.lower()
+            if any(blow in s.lower() or s.lower() in blow for s in selected):
+                continue
+            selected.append(b)
+
     return selected[:top_k]
 
 
