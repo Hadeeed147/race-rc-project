@@ -51,6 +51,16 @@ def main():
             "n_test_options": 35148,
         }
 
+    # Model A generation (Family 2)
+    a_gen = _load("model_a_gen_metrics.json")
+    if a_gen:
+        out["model_a_gen"] = a_gen
+
+    # Unsupervised / Semi-supervised (Family 3)
+    unsupervised = _load("unsupervised_metrics.json")
+    if unsupervised:
+        out["unsupervised"] = unsupervised
+
     baselines = _load("baselines_metrics.json")
     if baselines is not None:
         out["baselines"] = baselines

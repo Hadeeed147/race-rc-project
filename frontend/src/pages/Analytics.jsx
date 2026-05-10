@@ -2,10 +2,11 @@ import { useEffect, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import {
   ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Legend,
-  CartesianGrid, Cell,
+  CartesianGrid,
 } from 'recharts'
 import {
   Activity, Target, Award, Timer, Zap, Database, Server, Layers,
+  Wand2, BrainCircuit, Sparkles, CheckCircle2,
 } from 'lucide-react'
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '../components/ui/Card'
@@ -27,16 +28,16 @@ export default function Analytics() {
 
   useEffect(() => {
     let mounted = true
-    ;(async () => {
-      try {
-        const r = await getAnalytics()
-        if (mounted) setData(r)
-      } catch (e) {
-        toast({ title: 'Analytics failed', description: e.message, variant: 'destructive' })
-      } finally {
-        if (mounted) setBusy(false)
-      }
-    })()
+      ; (async () => {
+        try {
+          const r = await getAnalytics()
+          if (mounted) setData(r)
+        } catch (e) {
+          toast({ title: 'Analytics failed', description: e.message, variant: 'destructive' })
+        } finally {
+          if (mounted) setBusy(false)
+        }
+      })()
     return () => { mounted = false }
   }, [])
 
@@ -55,7 +56,7 @@ export default function Analytics() {
 
   const cards = [
     {
-      label: 'Accuracy', icon: Target,
+      label: 'Acc (Verification)', icon: Target,
       value: ensembleRow ? formatPercent(ensembleRow.accuracy, 1) : '—',
       sub: ensembleRow ? `Ensemble vs LR: +${formatNumber((ensembleRow.accuracy - (lrRow?.accuracy || 0)), 4)}` : 'val set',
     },
@@ -65,14 +66,14 @@ export default function Analytics() {
       sub: ensembleRow ? 'per-question argmax' : 'val set',
     },
     {
-      label: 'Exact Match', icon: Award,
-      value: ensembleRow ? formatNumber(ensembleRow.exact_match, 4) : '—',
-      sub: ensembleRow ? `vs random 0.250: +${formatNumber(ensembleRow.exact_match - 0.25, 3)}` : 'baseline 0.25',
+      label: 'Question BLEU', icon: Sparkles,
+      value: data?.model_a_gen?.bleu ? formatNumber(data.model_a_gen.bleu, 4) : '—',
+      sub: `ROUGE-L: ${data?.model_a_gen?.rouge_l ? formatNumber(data.model_a_gen.rouge_l, 3) : '—'}`,
     },
     {
-      label: 'Avg latency', icon: Timer,
-      value: avgLatency != null ? `${avgLatency} ms` : '— ms',
-      sub: latencyHistory.length ? `n=${latencyHistory.length} requests this session` : 'no requests yet',
+      label: 'Label Prop F1', icon: BrainCircuit,
+      value: data?.unsupervised?.label_prop?.f1_lp ? formatNumber(data.unsupervised.label_prop.f1_lp, 4) : '—',
+      sub: `Gain: +${data?.unsupervised?.label_prop?.improvement ? formatNumber(data.unsupervised.label_prop.improvement, 1) : '0'}% vs small LR`,
     },
   ]
 
@@ -83,160 +84,233 @@ export default function Analytics() {
     'Exact Match': Number(m.exact_match?.toFixed(4) ?? 0),
   }))
 
-  // Confusion matrix (use ensemble row, fallback to LR)
+  // Confusion matrix
   const cm = ensembleRow?.confusion_matrix || lrRow?.confusion_matrix || [[0, 0], [0, 0]]
   const flat = cm.flat()
   const cmMax = Math.max(...flat) || 1
 
-  // Model B
   const b = data?.model_b
   const bD = b?.distractors || {}
   const bH = b?.hints || {}
+  const genOurs = data?.model_a_gen || {}
+  const genT5 = data?.baselines?.t5_small || {}
 
   return (
     <motion.div variants={stagger} initial="initial" animate="animate"
-      className="mx-auto w-full max-w-6xl px-4 md:px-6 py-8 md:py-12 space-y-6">
+      className="mx-auto w-full max-w-6xl px-4 md:px-6 py-8 md:py-12 space-y-8">
+
       {/* Header */}
-      <motion.div {...fadeUp}>
-        <div className="flex items-center gap-2">
-          <Badge variant="default" className="gap-1.5"><Zap className="h-3 w-3" /> Live val-set metrics</Badge>
+      <motion.div {...fadeUp} className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <div className="flex items-center gap-2">
+            <Badge variant="default" className="gap-1.5"><Zap className="h-3 w-3" /> Live performance dashboard</Badge>
+          </div>
+          <h1 className="mt-3 text-3xl md:text-4xl font-bold tracking-tight">Analytics Dashboard</h1>
+          <p className="mt-2 text-muted-foreground max-w-2xl">
+            Formal evaluation results across the RACE test/val splits. Comparison between
+            classical ensemble models and neural baselines.
+          </p>
         </div>
-        <h1 className="mt-3 text-3xl md:text-4xl font-bold tracking-tight">Model dashboard</h1>
-        <p className="mt-2 text-muted-foreground max-w-2xl">
-          Performance of each Model A variant on the held-out validation split (8 787 questions /
-          35 148 option rows), plus Model B distractor + hint scores on a 200-sample subset.
-        </p>
+        <div className="flex items-center gap-3 text-xs text-muted-foreground bg-muted/30 px-3 py-2 rounded-lg border border-border">
+          <div className="flex items-center gap-1.5"><CheckCircle2 className="h-3.5 w-3.5 text-success" /> Verification</div>
+          <div className="flex items-center gap-1.5"><Sparkles className="h-3.5 w-3.5 text-primary" /> Generation</div>
+        </div>
       </motion.div>
 
-      {/* Metric cards */}
+      {/* Metric Cards */}
       <motion.div {...fadeUp} className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         {cards.map((c) => (
-          <Card key={c.label}>
+          <Card key={c.label} className="overflow-hidden">
             <CardContent className="p-5">
-              <div className="flex items-center gap-2 text-muted-foreground">
-                <c.icon className="h-4 w-4" />
-                <span className="text-xs uppercase tracking-wide">{c.label}</span>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <c.icon className="h-4 w-4" />
+                  <span className="text-xs uppercase tracking-widest font-medium">{c.label}</span>
+                </div>
               </div>
               <div className="mt-2 text-2xl md:text-3xl font-bold tabular-nums tracking-tight">
                 {busy ? <Skeleton className="h-8 w-24" /> : c.value}
               </div>
-              <div className="mt-1 text-[11px] text-muted-foreground">{c.sub}</div>
+              <div className="mt-1 text-[11px] text-muted-foreground flex items-center gap-1">
+                {c.sub}
+              </div>
             </CardContent>
           </Card>
         ))}
       </motion.div>
 
-      {/* Bar chart */}
-      <motion.div {...fadeUp}>
-        <Card>
-          <CardHeader>
-            <CardTitle>Model A — Macro F1 vs Exact Match</CardTitle>
-            <CardDescription>All three classifiers + the soft-vote ensemble. EM is the metric that matters.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="h-[300px]">
-              {busy ? (
-                <Skeleton className="h-full w-full" />
-              ) : (
-                <ResponsiveContainer>
-                  <BarChart data={chartData} margin={{ top: 8, right: 12, left: -12, bottom: 0 }}>
+      {/* Section 1: Unsupervised Learning (Rubric 4.2.2) */}
+      <motion.div {...fadeUp} className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Database className="h-5 w-5 text-success" />
+          <h2 className="text-xl font-bold">Model A: Unsupervised & Semi-Supervised</h2>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-success">K-Means Clustering</CardTitle>
+              <CardDescription>Latent pattern discovery in Q-A pairs</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex justify-between items-end">
+                <div>
+                  <div className="text-2xl font-bold">{formatNumber(data?.unsupervised?.kmeans?.silhouette, 4)}</div>
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Silhouette Score</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-2xl font-bold">{formatPercent(data?.unsupervised?.kmeans?.purity, 1)}</div>
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider">Cluster Purity</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-success">Label Propagation</CardTitle>
+              <CardDescription>Semi-supervised learning improvement</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex justify-between items-end">
+                <div>
+                  <div className="text-2xl font-bold">{formatNumber(data?.unsupervised?.label_prop?.f1_lp, 4)}</div>
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider">LP Macro F1</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-2xl font-bold text-success">+{formatNumber(data?.unsupervised?.label_prop?.improvement, 1)}%</div>
+                  <div className="text-[10px] text-muted-foreground uppercase tracking-wider text-success">Gain vs small-supervised</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </motion.div>
+
+      {/* Section 2: Verification Section */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <BrainCircuit className="h-5 w-5 text-primary" />
+          <h2 className="text-xl font-bold">Model A: Option Verification</h2>
+          <Badge variant="outline" className="ml-auto">Supervised Ensemble</Badge>
+        </div>
+
+        <motion.div {...fadeUp} className="grid gap-4 lg:grid-cols-[1.5fr_1fr]">
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Classifier Comparison</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="h-[280px] w-full mt-4">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" vertical={false} />
-                    <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} />
-                    <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} tickLine={false} axisLine={false} domain={[0, 0.7]} />
-                    <Tooltip
-                      contentStyle={{
-                        background: 'hsl(var(--card))',
-                        border: '1px solid hsl(var(--border))',
-                        borderRadius: 8,
-                        fontSize: 12,
-                      }}
-                    />
-                    <Legend wrapperStyle={{ fontSize: 12 }} />
-                    <Bar dataKey="Macro F1" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} />
-                    <Bar dataKey="Exact Match" fill="hsl(var(--accent))" radius={[6, 6, 0, 0]} />
+                    <XAxis dataKey="name" stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} />
+                    <YAxis stroke="hsl(var(--muted-foreground))" fontSize={11} tickLine={false} axisLine={false} domain={[0, 0.7]} />
+                    <Tooltip cursor={{ fill: 'hsl(var(--muted) / 0.4)' }} contentStyle={{ background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: 8, fontSize: 12 }} />
+                    <Legend wrapperStyle={{ fontSize: 11, paddingTop: 10 }} />
+                    <Bar dataKey="Macro F1" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} barSize={40} />
+                    <Bar dataKey="Exact Match" fill="hsl(var(--accent))" radius={[4, 4, 0, 0]} barSize={40} />
                   </BarChart>
                 </ResponsiveContainer>
-              )}
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
+              </div>
+            </CardContent>
+          </Card>
 
-      {/* CM + Model B */}
-      <motion.div {...fadeUp} className="grid gap-4 lg:grid-cols-[1fr_1.4fr]">
-        <Card>
-          <CardHeader>
-            <CardTitle>Confusion matrix — Ensemble</CardTitle>
-            <CardDescription>Per-option (after per-question argmax).</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-[auto_1fr_1fr] gap-2 items-center">
-              <div />
-              <div className="text-center text-[11px] text-muted-foreground">pred 0</div>
-              <div className="text-center text-[11px] text-muted-foreground">pred 1</div>
-              {[0, 1].map((i) => (
-                <FragmentRow key={i}>
-                  <div className="text-right pr-2 text-[11px] text-muted-foreground">true {i}</div>
-                  {[0, 1].map((j) => {
-                    const v = cm[i]?.[j] ?? 0
-                    const ratio = v / cmMax
-                    return (
-                      <div
-                        key={j}
-                        className="rounded-lg border border-border p-3 text-center font-mono text-sm tabular-nums"
-                        style={{
-                          background: `hsl(var(--primary) / ${0.05 + ratio * 0.5})`,
-                          color: ratio > 0.6 ? 'hsl(var(--primary-foreground))' : 'hsl(var(--foreground))',
-                        }}
-                      >
-                        {v.toLocaleString()}
-                      </div>
-                    )
-                  })}
-                </FragmentRow>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base">Confusion Matrix</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-[auto_1fr_1fr] gap-2 items-center mt-6">
+                <div />
+                <div className="text-center text-[10px] uppercase tracking-wider text-muted-foreground">pred 0</div>
+                <div className="text-center text-[10px] uppercase tracking-wider text-muted-foreground">pred 1</div>
+                {[0, 1].map((i) => (
+                  <div key={i} className="contents">
+                    <div className="text-right pr-2 text-[10px] uppercase tracking-wider text-muted-foreground">true {i}</div>
+                    {[0, 1].map((j) => {
+                      const v = cm[i]?.[j] ?? 0
+                      const ratio = v / cmMax
+                      return (
+                        <div key={j} className="rounded-lg border border-border p-4 text-center font-mono text-sm tabular-nums" style={{ background: `hsl(var(--primary) / ${0.03 + ratio * 0.4})`, borderLeft: ratio > 0.5 ? '2px solid hsl(var(--primary))' : '1px solid hsl(var(--border))' }}>
+                          {v.toLocaleString()}
+                        </div>
+                      )
+                    })}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Model B — distractors + hints</CardTitle>
-            <CardDescription>200 val samples; n-gram overlap metrics.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {busy ? <Skeleton className="h-32 w-full" /> : (
-              <>
-                <Row label="BLEU"      value={formatNumber(bD.bleu, 4)} />
-                <Row label="ROUGE-1 F" value={formatNumber(bD.rouge1_f, 4)} />
-                <Row label="ROUGE-2 F" value={formatNumber(bD.rouge2_f, 4)} />
-                <Row label="ROUGE-L F" value={formatNumber(bD.rougeL_f, 4)} />
-                <Row label="METEOR"    value={formatNumber(bD.meteor, 4)} />
-                <Row label="Distractor F1" value={formatNumber(bD.f1, 4)} />
-                <div className="border-t border-border pt-3 mt-2 space-y-2">
-                  <Row label="Hints — Precision @ 1" value={formatNumber(bH.precision_at_1, 4)} />
-                  <Row label="Hints — Precision @ 3" value={formatNumber(bH.precision_at_3, 4)} />
-                  <Row label="Hints — R² (scorer)"   value={formatNumber(bH.r2_scorer, 3)} muted />
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </motion.div>
+      {/* Section 3: Text Generation (Family 2) */}
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <Sparkles className="h-5 w-5 text-primary" />
+          <h2 className="text-xl font-bold">Generation Tasks (Model A + B)</h2>
+          <Badge variant="outline" className="ml-auto">ROUGE / BLEU / METEOR</Badge>
+        </div>
 
-      {/* System info */}
+        <motion.div {...fadeUp} className="grid gap-4 lg:grid-cols-2">
+          {/* Model A Question Generation */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base text-primary">Model A: Wh-Question Generation</CardTitle>
+              <CardDescription>Template-based Wh-Inversion vs Neural baseline.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <MetricTable
+                headers={['Metric', 'Ours (Improved)', 'Baseline (T5)']}
+                rows={[
+                  ['BLEU', genOurs.bleu, genT5.bleu],
+                  ['ROUGE-L', genOurs.rouge_l, genT5.rouge_l],
+                  ['METEOR', genOurs.meteor, genT5.meteor],
+                ]}
+              />
+            </CardContent>
+          </Card>
+
+          {/* Model B Distractors + Hints */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base text-primary">Model B: Distractors & Hints</CardTitle>
+              <CardDescription>Quality of distractor spans and hint relevance.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <MetricTable
+                headers={['Metric (Distractors)', 'Score']}
+                rows={[
+                  ['BLEU', bD.bleu],
+                  ['ROUGE-L', bD.rougeL_f],
+                  ['METEOR', bD.meteor],
+                  ['F1 Token', bD.f1],
+                ]}
+              />
+              <MetricTable
+                headers={['Metric (Hints)', 'Score']}
+                rows={[
+                  ['Prec @ 1', bH.precision_at_1],
+                  ['Prec @ 3', bH.precision_at_3],
+                  ['R² Scorer', bH.r2_scorer, true],
+                ]}
+              />
+            </CardContent>
+          </Card>
+        </motion.div>
+      </div>
+
+      {/* Footer / System Info */}
       <motion.div {...fadeUp}>
-        <Card>
-          <CardHeader>
-            <CardTitle>System</CardTitle>
-            <CardDescription>Reproducibility surface.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <Stat icon={Database} label="Vocab size"        value="20 000" sub="TF-IDF unigrams + bigrams" />
-              <Stat icon={Layers}   label="Train option rows" value="281 168" sub="70 292 questions × 4" />
-              <Stat icon={Server}   label="Models"            value="3 + 1"   sub="LR · SVC · NB · Ensemble" />
-              <Stat icon={Activity} label="Frameworks"        value="sklearn 1.6.1" sub="pandas 2.2.3 · numpy 2.2.2" />
+        <Card className="bg-muted/10 border-dashed">
+          <CardContent className="p-4">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Stat icon={Database} label="Vocab size" value="20 000" sub="TF-IDF unigrams + bigrams" />
+              <Stat icon={Layers} label="Total Rows" value="316 316" sub="Option-level training set" />
+              <Stat icon={Timer} label="Avg Latency" value={avgLatency != null ? `${avgLatency} ms` : '—'} sub="API response time" />
+              <Stat icon={Activity} label="Environment" value="Python 3.12" sub="scikit-learn · FastAPI" />
             </div>
           </CardContent>
         </Card>
@@ -245,28 +319,46 @@ export default function Analytics() {
   )
 }
 
-function FragmentRow({ children }) {
-  return <>{children}</>
-}
-
-function Row({ label, value, muted }) {
+function MetricTable({ headers, rows }) {
   return (
-    <div className="flex items-center justify-between gap-3">
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <span className={`font-mono text-sm tabular-nums ${muted ? 'text-muted-foreground' : 'text-foreground'}`}>{value}</span>
+    <div className="rounded-lg border border-border overflow-hidden mb-2">
+      <table className="w-full text-sm">
+        <thead>
+          <tr className="bg-muted/50 text-left border-b border-border">
+            {headers.map((h, i) => (
+              <th key={i} className={`p-2 font-medium text-[10px] uppercase tracking-widest ${i > 0 ? 'text-right' : ''}`}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-border">
+          {rows.map((row, i) => (
+            <tr key={i} className="hover:bg-muted/20 transition-colors">
+              {row.map((cell, j) => {
+                if (typeof cell === 'boolean') return null;
+                const isLabel = j === 0;
+                return (
+                  <td key={j} className={`p-2 font-mono text-[11px] tabular-nums ${isLabel ? 'text-muted-foreground font-sans' : 'text-foreground font-semibold text-right'}`}>
+                    {isLabel ? cell : formatNumber(cell, cell > 1 ? 1 : 4)}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   )
 }
 
 function Stat({ icon: Icon, label, value, sub }) {
   return (
-    <div className="rounded-xl border border-border bg-card/60 p-4">
-      <div className="flex items-center gap-2 text-muted-foreground">
+    <div className="flex flex-col">
+      <div className="flex items-center gap-2 text-muted-foreground mb-1">
         <Icon className="h-3.5 w-3.5" />
-        <span className="text-[11px] uppercase tracking-wide">{label}</span>
+        <span className="text-[10px] uppercase tracking-wider font-semibold">{label}</span>
       </div>
-      <div className="mt-1 text-base font-semibold">{value}</div>
-      <div className="text-[11px] text-muted-foreground">{sub}</div>
+      <div className="text-lg font-bold tabular-nums">{value}</div>
+      <div className="text-[10px] text-muted-foreground leading-tight">{sub}</div>
     </div>
   )
 }

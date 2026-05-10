@@ -1,5 +1,5 @@
 """
-Session 3 — FastAPI backend for the RACE quiz system.
+Session 3 — FastAPI backend for the RACE quiz system. (v0.1.1 — Updated Hint Model)
 
 Endpoints (all under http://localhost:8000):
   POST /generate     — article in, generated question + answer + 4 options
@@ -61,6 +61,7 @@ class DistractorReq(BaseModel):
 class HintReq(BaseModel):
     article: str
     question: str
+    correct_answer: Optional[str] = None
 
 
 # -------------- App + state --------------
@@ -84,6 +85,10 @@ def _load_models():
     STATE["ensemble_models"] = bundle["models"]
     STATE["ensemble_weights"] = bundle["weights"]
     STATE["hint_scorer"] = joblib.load(os.path.join(MODELS_DIR, "hint_scorer.pkl"))
+    try:
+        STATE["distractor_ranker"] = joblib.load(os.path.join(MODELS_DIR, "distractor_ranker.pkl"))
+    except Exception:
+        STATE["distractor_ranker"] = None
     try:
         STATE["question_ranker"] = joblib.load(os.path.join(MODELS_DIR, "question_ranker.pkl"))
     except Exception:
@@ -211,7 +216,7 @@ def generate(req: GenerateReq):
     ranker = STATE.get("question_ranker")
 
     # Pull more candidates than usual so we can try the next one if the first fails.
-    candidates = generate_questions(req.article, vec, ranker, top_k=8) or []
+    candidates = generate_questions(req.article, vec, ranker, top_k=20) or []
     if not candidates:
         raise HTTPException(status_code=422, detail="Could not generate a question from this article.")
 
@@ -231,7 +236,8 @@ def generate(req: GenerateReq):
         chosen = candidates[0]
 
     correct_answer = chosen["answer"]
-    distractors = extract_distractors(req.article, correct_answer, vec, top_k=3)
+    d_ranker = STATE.get("distractor_ranker")
+    distractors = extract_distractors(req.article, correct_answer, vec, top_k=3, ranker=d_ranker)
     correct_label, options = _build_options(correct_answer, distractors)
     latency_ms = int((time.time() - t0) * 1000)
     return {
@@ -268,7 +274,8 @@ def predict(req: PredictReq):
 def distractors(req: DistractorReq):
     t0 = time.time()
     vec = STATE["vectorizer"]
-    ds = extract_distractors(req.article, req.correct_answer, vec, top_k=3)
+    d_ranker = STATE.get("distractor_ranker")
+    ds = extract_distractors(req.article, req.correct_answer, vec, top_k=3, ranker=d_ranker)
     latency_ms = int((time.time() - t0) * 1000)
     return {"distractors": ds, "latency_ms": latency_ms}
 
@@ -278,7 +285,7 @@ def hints(req: HintReq):
     t0 = time.time()
     vec = STATE["vectorizer"]
     sc = STATE["hint_scorer"]
-    hs = generate_hints(req.article, req.question, vec, sc)
+    hs = generate_hints(req.article, req.question, req.correct_answer, vec, sc)
     levels = ["vague", "moderate", "specific"]
     out = [{"level": lv, "text": t} for lv, t in zip(levels, hs)]
     latency_ms = int((time.time() - t0) * 1000)

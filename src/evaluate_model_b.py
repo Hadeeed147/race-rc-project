@@ -209,7 +209,7 @@ def main():
         gold_sent = sents[gold_idx]
 
         # Generate 3 hints
-        hints = generate_hints(article, question, vec, scorer)
+        hints = generate_hints(article, question, correct, vec, scorer)
 
         # Precision@1, Precision@3 (does the gold sentence appear in top 1/3?)
         p1 = 1.0 if hints and hints[-1].strip() == gold_sent.strip() else 0.0
@@ -218,7 +218,7 @@ def main():
         p1_list.append(p1); p3_list.append(p3)
 
         # R^2 collection: predicted probas vs heuristic gold scores (overlaps)
-        feats = _sentence_features(sents, question, vec)
+        feats = _sentence_features(sents, question, correct, vec)
         pred = scorer.predict_proba(feats)[:, 1]
         r2_pred.extend(pred.tolist())
         r2_true.extend(overlaps)

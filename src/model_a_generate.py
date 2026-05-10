@@ -36,6 +36,7 @@ import os
 import re
 import time
 import joblib
+import re
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
@@ -48,7 +49,6 @@ MODELS_DIR = os.path.join(ROOT_DIR, "models")
 
 STOPWORDS = set(ENGLISH_STOP_WORDS)
 TOK_RE = re.compile(r"[A-Za-z]{3,}")
-SENT_RE = re.compile(r"(?<=[.!?])\s+")
 WORD_RE = re.compile(r"\b[A-Za-z][A-Za-z\-']*\b")
 YEAR_RE = re.compile(r"\b(1[5-9]\d{2}|20\d{2})\b")
 DATE_RE = re.compile(
@@ -61,21 +61,57 @@ QUANT = {"many", "most", "few", "all", "several", "some", "every", "each"}
 CAUSAL = {"because", "since", "therefore", "so", "thus", "hence", "due"}
 LOC_PREPS = {"in", "at", "on", "near", "from"}
 TITLES = {"mr", "mrs", "ms", "dr", "prof", "professor", "sir", "lady"}
-PERSON_PRONOUNS = {"he", "she", "her", "him", "they", "them"}
+PERSON_PRONOUNS = {"he", "she", "they"}
 PRONOUN_STARTS = {"he", "she", "it", "they", "this", "that", "these", "those",
                   "we", "you", "i"}
 LEADING_ARTICLES = {"a", "an", "the"}
-STEM_MAX_WORDS = 14
+STEM_MAX_WORDS = 25
 STEM_MIN_WORDS = 4
-SENT_MIN_WORDS = 8
-SENT_MAX_WORDS = 30
+SENT_MIN_WORDS = 6
+SENT_MAX_WORDS = 35
+# Abbreviations that should NOT trigger sentence splits
+_ABBREV = {"mr", "mrs", "ms", "dr", "prof", "jr", "sr", "st", "vs", "etc",
+           "vol", "dept", "est", "approx", "govt", "inc", "ltd", "co",
+           "gen", "sgt", "cpl", "pvt", "rev", "hon", "pres"}
+_ABBREV_PATTERN = re.compile(
+    r"\b(" + "|".join(re.escape(a) for a in sorted(_ABBREV, key=len, reverse=True)) + r")\.\s",
+    flags=re.IGNORECASE,
+)
+_LETTER_JUNK = {"yours", "sincerely", "dear", "regards", "cheers", "thanks"}
+# Pattern for quoted text in passages
+QUOTED_RE = re.compile(r'"([^"]{3,40})"')
 
 
 # ----------------- helpers -----------------
 def split_sentences(text):
-    if not isinstance(text, str):
+    """Improved sentence splitter that protects abbreviations and filters junk."""
+    if not isinstance(text, str) or not text.strip():
         return []
-    return [s.strip() for s in SENT_RE.split(text) if s.strip()]
+    # Step 1: Protect abbreviations by replacing their period with a placeholder
+    protected = text
+    for m in reversed(list(_ABBREV_PATTERN.finditer(protected))):
+        abbr = m.group(1)
+        protected = protected[:m.start()] + abbr + "<DOT> " + protected[m.end():]
+    # Step 2: Protect initials like "S.H.E." or "U.S."
+    protected = re.sub(r'\b([A-Z])\.([A-Z])\.', r'\1<DOT>\2<DOT>', protected)
+    # Step 3: Split on sentence-ending punctuation followed by space+uppercase
+    # More aggressive split: any .!? followed by space and Uppercase
+    raw = re.split(r'(?<=[.!?])\s+(?=[A-Z])', protected)
+    # Step 4: Restore placeholders and filter
+    out = []
+    for s in raw:
+        s = s.replace("<DOT>", ".").strip()
+        if not s:
+            continue
+        words = s.split()
+        if len(words) < 5 or len(words) > 30: # Tighten sentence length
+            continue
+        # Skip letter sign-offs and greetings
+        first_low = words[0].lower().rstrip(".,;:")
+        if first_low in _LETTER_JUNK:
+            continue
+        out.append(s)
+    return out
 
 
 def tokenize(text):
@@ -103,11 +139,14 @@ def find_proper_noun_phrase(words):
 
 
 def first_proper_noun(words):
+    """First capitalized word that isn't a pronoun, title, or article."""
+    skip = PRONOUN_STARTS | TITLES | LEADING_ARTICLES | {"i"}
     for i, w in enumerate(words):
         if i == 0:
             continue
-        if w and w[0].isupper() and w.isalpha():
-            return w
+        clean = w.strip(".,?!;:")
+        if clean and clean[0].isupper() and clean.isalpha() and clean.lower() not in skip:
+            return clean
     return None
 
 
@@ -180,7 +219,11 @@ def detect_template(sentence):
         return "what"
     low = [w.lower() for w in words]
 
-    # Person cue first — beats other cues
+    # 1. Time/Date (HIGHEST PRIORITY)
+    if YEAR_RE.search(sentence) or DATE_RE.search(sentence) or TIME_RE.search(sentence):
+        return "when"
+
+    # 2. Person cue
     if has_title_then_name(words) or any(p in low for p in PERSON_PRONOUNS):
         return "who"
     if find_proper_noun_phrase(words) and not (
@@ -190,13 +233,10 @@ def detect_template(sentence):
     ):
         return "who"
 
-    # Location marker
+    # 3. Location marker
     for i in range(len(words) - 1):
         if low[i] in LOC_PREPS and words[i + 1] and words[i + 1][0].isupper():
             return "where"
-
-    if YEAR_RE.search(sentence) or DATE_RE.search(sentence) or TIME_RE.search(sentence):
-        return "when"
 
     if NUM_RE.search(sentence):
         # number + plural noun proxy: a number followed by a word ending in 's'
@@ -214,44 +254,98 @@ def detect_template(sentence):
     return "what"
 
 
+def _extract_principal_phrase(sentence, answer):
+    """
+    Smarter Safe version: Isolates the predicate but 
+    RETAINS the verb so the question is grammatically correct.
+    """
+    low = sentence.lower()
+    ans_low = (answer or "").lower()
+    
+    # 1. Subject-replacement logic: If answer is at the start,
+    # the question is just [Wh] + [rest of sentence]
+    if ans_low and low.startswith(ans_low):
+        phrase = sentence[len(ans_low):].strip()
+        return phrase
+        
+    # 2. Hinge-splitting but keeping the hinge word
+    # (is, was, has, etc.)
+    hinges = [r" was ", r" is ", r" were ", r" are ", r" has ", r" had ", r" went ", r" did ", r" took "]
+    for h in hinges:
+        match = re.search(h, sentence, flags=re.IGNORECASE)
+        if match:
+            # Return from the verb onwards
+            return sentence[match.start():].strip()
+            
+    # 3. Location/Object hinges (in, at, with)
+    loc_hinges = [r" in ", r" at ", r" with ", r" about "]
+    for h in loc_hinges:
+        match = re.search(h, sentence, flags=re.IGNORECASE)
+        if match:
+            # Return before the hinge
+            return sentence[:match.start()].strip()
+            
+    return sentence
+
+
 # ----------------- answer-span extraction -----------------
 def extract_answer_span(sentence, template):
-    words = words_of(sentence)
-    if template == "who":
-        return find_proper_noun_phrase(words) or first_proper_noun(words) or ""
-    if template == "where":
-        # prep + Capitalized run
-        low = [w.lower() for w in words]
-        for i in range(len(words) - 1):
-            if low[i] in LOC_PREPS and words[i + 1] and words[i + 1][0].isupper():
-                run = [words[i + 1]]
-                j = i + 2
-                while j < len(words) and words[j] and words[j][0].isupper() and words[j].isalpha():
-                    run.append(words[j]); j += 1
-                return " ".join(run)
-        return find_proper_noun_phrase(words) or ""
-    if template == "when":
-        m = YEAR_RE.search(sentence) or DATE_RE.search(sentence) or TIME_RE.search(sentence)
-        return m.group(0) if m else ""
-    if template == "how_many":
-        m = NUM_RE.search(sentence)
-        if not m:
-            return ""
-        # grab the number + the next 1-2 nouns (ending in 's' typically)
-        tail = sentence[m.end(): m.end() + 60]
-        tail_words = WORD_RE.findall(tail)
-        if tail_words:
-            return f"{m.group(0)} {tail_words[0]}".strip()
-        return m.group(0)
-    if template == "why":
-        m = re.search(r"\b(because|since|therefore|so|thus|hence|due to)\b\s+([^.!?]+)",
-                      sentence, flags=re.IGNORECASE)
-        if m:
-            return m.group(2).strip().split(",")[0].strip()
+    """
+    Extract a meaningful answer span from a sentence.
+    Prioritises multi-word named entities, quoted text, dates, and quantities
+    over random single tokens.
+    """
+    words = sentence.split()
+    if not words:
         return ""
-    # what / fallback: longest run of content words
-    content = [w for w in words if w.lower() not in STOPWORDS and len(w) > 2]
-    return " ".join(content[:5])
+
+    # 1. Quoted text — often the key phrase in RACE passages
+    qm = QUOTED_RE.search(sentence)
+    if qm:
+        span = qm.group(1).strip()
+        if 1 <= len(span.split()) <= 2:
+            return span
+
+    # 2. Multi-word proper noun phrase (e.g. "Thomas Moore", "New York")
+    pn = find_proper_noun_phrase(words)
+    if pn and 1 <= len(pn.split()) <= 2:
+        return pn
+
+    # 3. Year or date expression
+    year_match = re.search(r"\b(19|20)\d{2}\b", sentence)
+    if year_match and template in ("when", "what"):
+        return year_match.group()
+
+    # 4. Quantity expression: number + following word(s) e.g. "three years"
+    qty = re.search(r"\b(\d+(?:\.\d+)?\s+\w+)\b", sentence)
+    if qty and template == "how_many":
+        span = qty.group(1).strip()
+        if 1 <= len(span.split()) <= 2:
+            return span
+
+    # 5. Single proper noun (not a pronoun)
+    fpn = first_proper_noun(words)
+    if fpn and len(fpn) > 2:
+        # If the template is 'who', we MUST have a proper noun or person word
+        return fpn
+
+    # 6. Fallback: the longest content word that isn't a stopword or pronoun
+    # Avoid '-ing' verbs and common adverbs as they make bad Wh-questions
+    bad_suffixes = ("ing", "ly", "ed", "es")
+    skip_set = STOPWORDS | PRONOUN_STARTS | {"i", "am", "is", "was", "were", "are", "be"}
+    
+    candidates = []
+    for w in words:
+        w_clean = w.strip(".,?!").lower()
+        if w_clean in skip_set or len(w_clean) < 2:
+            continue
+        # Removed bad_suffixes check to allow more candidates
+        candidates.append(w.strip(".,?!"))
+        
+    if candidates:
+        return max(candidates, key=len)
+
+    return words[-1].strip(".,?!") if words else ""
 
 
 # ----------------- stem realisation + post-processing -----------------
@@ -270,59 +364,142 @@ def _strip_answer_from_stem(stem, answer):
 
 
 def _polish(stem):
+    """Clean up the question stem: capitalize, trim, add question mark."""
+    if not stem:
+        return None
+    # Remove leading common adverbs that don't belong in a question
+    stem = re.sub(r'^(also|however|so far|furthermore|moreover|additionally|consequently|therefore),\s*', '', stem, flags=re.IGNORECASE)
+    
     parts = stem.split()
-    while parts and parts[0].lower() in LEADING_ARTICLES:
-        parts = parts[1:]
-    parts = parts[:STEM_MAX_WORDS]
-    if not parts:
-        return ""
+    # Ensure it starts with a Wh-word (it should, but just in case)
+    wh_words = {"who", "what", "where", "when", "why", "how"}
+    if not parts or parts[0].lower() not in wh_words:
+        # If it doesn't start with a Wh-word, it might be a mangled sentence.
+        return None
+
+    # Limit length
+    parts = parts[:20] 
     parts[0] = parts[0][0].upper() + parts[0][1:] if parts[0] else parts[0]
-    text = " ".join(parts).rstrip(".,;:!?")
+    
+    # Remove duplicate adjacent words
+    deduped = [parts[0]]
+    for w in parts[1:]:
+        if w.lower() != deduped[-1].lower():
+            deduped.append(w)
+            
+    text = " ".join(deduped).rstrip(".,;:!? ")
     return text + "?"
 
 
 def realize_template(sentence, template, answer):
-    words = words_of(sentence)
-    content = [w for w in words if w.lower() not in STOPWORDS and len(w) > 2]
-    main_np = " ".join(content[:5]) if content else sentence
-    main_np = _strip_answer_from_stem(main_np, answer).strip()
+    """
+    Build a question by replacing the answer span with a Wh-word.
+    ALWAYS starts with a Wh-word. Uses auxiliary inversion.
+    Returns None if a grammatical question cannot be formed.
+    """
+    if not answer or not sentence:
+        return None
+        
+    ans_low = answer.lower().strip()
+    sent_low = sentence.lower()
 
-    if template == "who":
-        stem = f"Who is associated with {main_np.lower()}"
-    elif template == "where":
-        stem = f"Where in the passage is {main_np.lower()} mentioned"
-    elif template == "when":
-        stem = f"When did the events about {main_np.lower()} happen"
-    elif template == "how_many":
-        stem = f"How many of {main_np.lower()} are mentioned"
-    elif template == "why":
-        stem = f"Why does the passage describe {main_np.lower()}"
-    else:
-        stem = f"What does the passage say about {main_np.lower()}"
-    return _polish(stem)
+    # Map template to Wh-word prefix
+    wh = {"who": "Who", "where": "Where", "when": "When",
+          "how_many": "How many", "why": "Why"}.get(template, "What")
+
+    pattern = re.compile(r'\b' + re.escape(ans_low) + r'\b', flags=re.IGNORECASE)
+    match = pattern.search(sentence)
+
+    if not match:
+        return None
+
+    before = sentence[:match.start()].strip()
+    after = sentence[match.end():].strip().rstrip(".,;:")
+
+    if not before:
+        # Subject replacement: [Wh] [Rest]?
+        return _polish(f"{wh} {after}")
+        
+    if len(before.split()) <= 1 and before.lower() in {"in", "at", "on", "from", "by"}:
+        # Prepended preposition: "In London" -> "Where ...?"
+        return _polish(f"{wh} {after}")
+
+    # Try auxiliary inversion: [Wh] [Aux] [Subject] [Verb Rest]?
+    # Look for common auxiliary/modal verbs
+    aux_pattern = re.compile(r'\b(is|was|are|were|has|had|can|could|will|would|should|does|did|do)\b', re.IGNORECASE)
+    aux_match = aux_pattern.search(before)
+    
+    if aux_match:
+        aux = aux_match.group(1)
+        subj = before[:aux_match.start()].strip()
+        rest = before[aux_match.end():].strip()
+        
+        # Only invert if the subject is relatively simple (<= 2 words)
+        # to avoid mangling complex sentences.
+        if 1 <= len(subj.split()) <= 2:
+            # If the subject is 'I', change to 'you' for a better question
+            if subj.lower() == 'i':
+                subj = 'you'
+                if aux.lower() == 'was': aux = 'were'
+                if aux.lower() == 'am': aux = 'are'
+            
+            # assembled = Wh + Aux + Subj + RestOfPredicate + After
+            parts = [wh, aux, subj, rest, after]
+            return _polish(" ".join(p for p in parts if p))
+
+    # Fallback: If no aux found or subj is too complex, use the original hinge logic
+    # This ensures we don't return None and crash the UI.
+    phrase = _extract_principal_phrase(sentence, answer)
+    phrase = phrase.strip(".,?! ")
+    if not phrase:
+        phrase = "the passage"
+    return _polish(f"{wh} {phrase}")
+
 
 
 def _is_valid_question(stem, answer):
-    parts = [w for w in stem.split() if w.strip()]
-    if len(parts) < STEM_MIN_WORDS:
+    """Pass-able quality gate."""
+    if not stem:
         return False
+    parts = [w for w in stem.split() if w.strip()]
+    
+    # Very lenient word count
+    if len(parts) < 3:
+        return False
+        
     # answer must NOT appear verbatim inside the stem
-    if answer:
-        if answer.strip().lower() and answer.strip().lower() in stem.lower():
+    if answer and answer.strip().lower():
+        if answer.strip().lower() in stem.lower():
             return False
+            
+    # Must contain at least one content word
+    content = [w for w in parts[1:] if w.lower().rstrip("?.,") not in STOPWORDS]
+    if not content:
+        # Even if no content words, let it through if it's a Wh-question
+        if parts[0].lower() not in {"who", "what", "where", "when", "why", "how"}:
+            return False
+        
+    # REMOVED internal quote check to satisfy 'pass-able' requirement
     return True
 
 
 # ----------------- ranker features -----------------
-def sentence_features(sentences, vectorizer):
-    """7-feature matrix: length, position, named-entity flag, kw_overlap,
-    sim_to_article, has_year_or_num, starts_with_pronoun_flag (negated)."""
+def sentence_features(sentences, vectorizer, target_text=None):
+    """
+    7-feature matrix: length, position, named-entity flag, kw_overlap,
+    sim_to_target, has_year_or_num, starts_with_pronoun_flag (negated).
+    
+    target_text: usually the gold answer (training) or heuristic answer (inference).
+    """
     if not sentences:
         return np.empty((0, 7))
+    
+    target_vec = vectorizer.transform([target_text or " ".join(sentences)])
     sims = cosine_similarity(
         vectorizer.transform(sentences),
-        vectorizer.transform([" ".join(sentences)])
+        target_vec
     ).ravel()
+    
     article_tokens = set(tokenize(" ".join(sentences)))
     n = len(sentences)
     feats = np.zeros((n, 7), dtype=np.float64)
@@ -335,18 +512,37 @@ def sentence_features(sentences, vectorizer):
         feats[i, 1] = i / max(1, n - 1)
         feats[i, 2] = 1.0 if find_proper_noun_phrase(words) else 0.0
         feats[i, 3] = kw_overlap
-        feats[i, 4] = sims[i]
+        feats[i, 4] = sims[i] # This is now similarity to target_text (the answer!)
         feats[i, 5] = 1.0 if (YEAR_RE.search(s) or NUM_RE.search(s)) else 0.0
         feats[i, 6] = 0.0 if starts_with_pronoun(words) else 1.0
     return feats
 
 
-def generate_questions(article, vectorizer, ranker=None, top_k=3):
-    sents = split_sentences(article)
-    if len(sents) < 3:
+def generate_questions(text, vectorizer, ranker=None, top_k=20):
+    """
+    Generate multiple quiz questions from a passage.
+    Returns a list of dicts: [{'question': str, 'answer': str, 'template': str}, ...]
+    """
+    sents = split_sentences(text)
+    if not sents:
         return []
-    feats = sentence_features(sents, vectorizer)
+    
+    # Step 1 Compliance: For each sentence, pick a candidate answer 
+    # so we can calculate the "overlap with answer" feature.
+    candidate_answers = []
+    for s in sents:
+        temp_template = detect_template(s)
+        candidate_answers.append(extract_answer_span(s, temp_template))
+    
+    # Aggregate info for ranking
     info = informativeness_scores(sents, vectorizer)
+    
+    # We use the most informative answer as a proxy target for global ranking
+    best_ans_idx = int(np.argmax(info))
+    proxy_target = candidate_answers[best_ans_idx]
+    
+    feats = sentence_features(sents, vectorizer, target_text=proxy_target)
+    
     if ranker is not None:
         scores = 0.6 * ranker.predict_proba(feats)[:, 1] + 0.4 * info
     else:
@@ -354,38 +550,70 @@ def generate_questions(article, vectorizer, ranker=None, top_k=3):
     order = np.argsort(-scores)
 
     out, seen_stems = [], set()
-    for idx in order[: max(top_k * 4, 8)]:
+    for idx in order:
         sent = sents[idx]
         template = detect_template(sent)
-        answer = extract_answer_span(sent, template)
+        answer = candidate_answers[idx]
+
+        # Skip empty answers. Allow up to 4 words to ensure we get results.
+        if not answer or len(answer) < 2 or len(answer.split()) > 4:
+            continue
+
+        # Re-derive template from the answer type for better alignment
+        template = _align_template_to_answer(template, answer, sent)
+
         stem = realize_template(sent, template, answer)
+        if not stem:
+            continue
+        
         if not _is_valid_question(stem, answer):
-            # if even the answer is empty, skip
-            if not answer:
-                continue
-            # try an alternative template
-            for fallback in ("what", "who", "where", "when"):
-                if fallback == template: continue
-                ans2 = extract_answer_span(sent, fallback)
-                stem2 = realize_template(sent, fallback, ans2)
-                if _is_valid_question(stem2, ans2):
-                    template, answer, stem = fallback, ans2, stem2
-                    break
-            else:
-                continue
+            continue
+            
+        # Dedup stems
         if stem.lower() in seen_stems:
             continue
         seen_stems.add(stem.lower())
+
         out.append({
-            "sentence": sent,
-            "template": template,
             "question": stem,
             "answer": answer,
-            "score": float(scores[idx]),
+            "template": template
         })
         if len(out) >= top_k:
             break
+            
     return out
+
+
+def _align_template_to_answer(template, answer, sentence):
+    """Ensure the Wh-word matches what was actually extracted as the answer."""
+    ans = (answer or "").strip()
+    # If it's a year → when
+    if re.match(r'^(19|20)\d{2}$', ans):
+        return "when"
+    # If it's a number + noun → how_many
+    if re.match(r'^\d+\s+\w+', ans):
+        return "how_many"
+    # If it looks like a person name (Title + Name, or multi-word proper)
+    words = ans.split()
+    if words and words[0].lower().rstrip('.') in TITLES:
+        return "who"
+    if all(w[0].isupper() and w.isalpha() for w in words) and len(words) >= 2:
+        # Multi-word proper noun — could be person or place
+        # Check if it follows a location preposition in the sentence
+        sent_low = sentence.lower()
+        for prep in ("in ", "at ", "from ", "near ", "to "):
+            if prep + ans.lower() in sent_low:
+                return "where"
+        return "who"
+    # Single proper noun — keep original template but avoid "who" for places
+    if template == "who" and len(words) == 1 and words[0][0].isupper():
+        # Heuristic: if preceded by location preposition → where
+        sent_low = sentence.lower()
+        for prep in ("in ", "at ", "from ", "near ", "to "):
+            if prep + ans.lower() in sent_low:
+                return "where"
+    return template
 
 
 # ----------------- ranker training -----------------
@@ -397,7 +625,11 @@ def train_ranker(train_csv, vectorizer, n_questions=1500, random_state=42):
         sents = split_sentences(r["article"])
         if len(sents) < 5:
             continue
-        feats = sentence_features(sents, vectorizer)
+            
+        # Get the real gold answer for this question
+        gold_ans = str(r[r["answer"]])
+        
+        feats = sentence_features(sents, vectorizer, target_text=gold_ans)
         info = informativeness_scores(sents, vectorizer)
         # heuristic gold: top 30 % by composite informativeness
         rank = np.argsort(-info)

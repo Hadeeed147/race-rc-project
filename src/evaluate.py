@@ -198,10 +198,11 @@ def evaluate_model_b_on_test():
             overlaps.append(ov)
         gold_idx = int(np.argmax(overlaps))
         gold_sent = sents[gold_idx]
-        hints = generate_hints(row["article"], row["question"], vec, scorer)
+        ans = row[row["answer"]]
+        hints = generate_hints(row["article"], row["question"], ans, vec, scorer)
         p1_list.append(1.0 if hints and hints[-1].strip() == gold_sent.strip() else 0.0)
         p3_list.append(1.0 if any(h.strip() == gold_sent.strip() for h in hints) else 0.0)
-        feats = _sentence_features(sents, row["question"], vec)
+        feats = _sentence_features(sents, row["question"], ans, vec)
         pred = scorer.predict_proba(feats)[:, 1]
         r2_pred.extend(pred.tolist()); r2_true.extend(overlaps)
     r2 = float(r2_score(r2_true, r2_pred)) if r2_pred else 0.0
