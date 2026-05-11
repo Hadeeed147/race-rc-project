@@ -1,250 +1,340 @@
 # RACE Reading Comprehension AI
 
-A classical-ML reading-comprehension and quiz system over the
+A **classical-ML** reading-comprehension and quiz system over the
 [RACE dataset](https://www.kaggle.com/datasets/ankitdhiman7/race-dataset)
 (English exam passages with multiple-choice questions). Given a passage,
 the system generates a multiple-choice question, scores each option with
 a soft-vote ensemble of TF-IDF classifiers, surfaces three graduated hints,
-and exposes everything through a polished React UI. **No neural networks
-in the production pipeline** — BERT and T5 are reported as inference-only
-baselines.
+and exposes everything through a polished React + FastAPI UI.
+
+> **No neural networks in the production pipeline** — BERT and T5 appear
+> only as inference-only baselines for comparison.
 
 ---
 
-## ✨ Features
+## Features
 
-- **Generation** — Wh-template question generator with answer-span
-  extraction, length-capped stems, and a Random-Forest informativeness
-  ranker over 7 sentence-level features.
-- **Verification (Model A)** — Logistic Regression, calibrated LinearSVC,
-  and ComplementNB classifiers over a 20 000-feature TF-IDF
-  vocabulary; soft-vote ensemble with searched weights.
-- **Distractors (Model B)** — Frequent content-word/bigram extraction +
-  TF-IDF cosine similarity to the correct answer + diversity penalty.
-- **Hints (Model B)** — Sentence-level informativeness scorer (LR over
-  cosine sim, keyword overlap, position, length); three graduated hints
-  ranked vague → moderate → specific.
-- **K-Means + Label Propagation** — Unsupervised clusters (silhouette /
-  purity) and a semi-supervised baseline over a TruncatedSVD projection.
+| Component | Description |
+|-----------|-------------|
+| **Model A — Verification** | Soft-vote ensemble (LR + calibrated LinearSVC + ComplementNB) over 20 000-feature TF-IDF vectors; `lr_heavy` weights (0.50 / 0.25 / 0.25) found by val-set search |
+| **Model A — Generation** | Wh-template question generator with a 7-feature RandomForest ranker and multi-stage stem post-processor (answer-leakage guard, length cap, forced `?`) |
+| **Model B — Distractors** | Noun-phrase extraction + category-aware scoring + supervised RandomForest reranker (One-Hot cosine, char-level match, passage frequency) + diversity filter |
+| **Model B — Hints** | LR scorer over 5 sentence-level features (cosine sim, keyword overlap, position, length); returns 3 hints at ~70 / 85 / 95th relevance percentiles |
+| **Unsupervised** | K-Means (k=4, silhouette + purity) on TF-IDF features |
+| **Semi-supervised** | Label Propagation (knn=7) over TruncatedSVD-100 projection; compared against supervised LR on same label budget |
 
 ---
 
-## 🏗 Architecture
+## Results (held-out test set, 8 787 questions)
 
-```
-                                ┌───────────────────────┐
-                                │   data/train.csv     │
-                                └──────────┬────────────┘
-                                           │ 80/10/10
-                                           ▼
-                              ┌──────────────────────────┐
-                              │  src/preprocessing.py    │
-                              │  src/features.py         │  TF-IDF (20 000)
-                              └──────────┬───────────────┘
-                                         │
-                ┌────────────────────────┴──────────────────────────┐
-                ▼                                                   ▼
-   ┌─────────────────────────┐                       ┌──────────────────────────┐
-   │ Model A — verification  │                       │ Model B — distractors    │
-   │  LR · SVC · NB           │                       │ + graduated hints        │
-   │  Ensemble (weight search)│                       │ TF-IDF cosine + LR scorer│
-   │  K-Means · LabelProp     │                       │                          │
-   │  Wh-template generator   │                       │                          │
-   └─────────┬───────────────┘                       └──────────────┬───────────┘
-             └─────────────────────┐    ┌──────────────────────────┘
-                                   ▼    ▼
-                       ┌─────────────────────────┐
-                       │  backend/main.py        │
-                       │  FastAPI · 7 endpoints  │
-                       │  /predict /generate     │
-                       │  /distractors /hints    │
-                       │  /sample /analytics     │
-                       │  /healthz               │
-                       └────────────┬────────────┘
-                                    │ JSON over CORS
-                                    ▼
-                       ┌─────────────────────────┐
-                       │  frontend/ (Vite/React) │
-                       │  Tailwind · shadcn-style│
-                       │  Recharts · Framer M.   │
-                       │  Zustand · lucide-react │
-                       └─────────────────────────┘
-```
-
----
-
-## 📊 Final results (held-out test set)
-
-> The **test split (≈ 8 787 questions)** is sacred — it was untouched until
-> the final evaluation step. Numbers below are computed by
-> `src/final_evaluation.py` and are also the ones served by
-> `GET /analytics`.
+### Model A — Verification
 
 | Model | Accuracy | Macro F1 | Exact Match |
-|-------|---------:|---------:|------------:|
-| Random baseline                              | — | — | 0.250 |
-| BERT-base (frozen) + LR head                 | _see backend/metrics.json_ | _ ′ _ | _ ′ _ |
-| **Tuned ensemble (LR + SVC + NB)**            | _see backend/metrics.json_ | _ ′ _ | _ ′ _ |
+|-------|:--------:|:--------:|:-----------:|
+| Random baseline | — | — | 0.250 |
+| Frozen BERT-base + LR head | 0.6345 | 0.4895 | 0.2359 |
+| Logistic Regression (individual) | 0.6710 | 0.5408 | 0.3082 |
+| LinearSVC — calibrated (individual) | 0.6690 | 0.5381 | 0.3040 |
+| ComplementNB (individual) | 0.6629 | 0.5296 | 0.2948 |
+| **Tuned Ensemble (lr_heavy)** | **0.6686** | **0.5372** | **0.3083** |
 
-| Distractors (200-sample test subset) | BLEU | ROUGE-1 F | ROUGE-2 F | ROUGE-L F | METEOR | F1 |
-|--------------------------------------|-----:|----------:|----------:|----------:|-------:|---:|
-| TF-IDF cosine + diversity            | _see model_b on test_  |   |   |   |   |   |
+### Model B — Distractors (200-sample test subset)
 
-| Hints (test, n=200) | P @ 1 | P @ 3 | R² (scorer) |
-|---------------------|------:|------:|------------:|
-| LR scorer           | _see test json_ | _ ′ _ | _ ′ _ |
+| BLEU | ROUGE-1 F | ROUGE-2 F | ROUGE-L F | METEOR | Token F1 |
+|:----:|:---------:|:---------:|:---------:|:------:|:--------:|
+| 0.0042 | 0.1056 | 0.0158 | 0.1036 | 0.0757 | 0.0961 |
 
-> Exact numbers are also written into `models/final_test_metrics.json`,
-> `models/baselines_metrics.json`, and `models/hyperparameter_sweep.json`.
-> Three publication-quality figures are saved under
-> `notebooks/figures/`: `final_confusion_matrix.png`,
-> `final_model_comparison.png`, `final_metric_breakdown.png`.
+### Model B — Hints (186-sample val subset)
+
+| Precision @ 1 | Precision @ 3 | R² (scorer) |
+|:-------------:|:-------------:|:-----------:|
+| 0.57 | 0.74 | −2.16 |
+
+> **Note on Hint R²:** The scorer is trained on question-relevance but
+> evaluated against answer-relevance gold. P@3 = 0.74 is the more
+> meaningful metric. See report for full discussion.
 
 ---
 
-## ⚙ Setup
+## Architecture
+
+```
+                        data/train.csv
+                              │  80 / 10 / 10  random_state=42
+                              ▼
+                  ┌───────────────────────┐
+                  │  src/preprocessing.py │  split → train/val/test CSVs
+                  │  src/model_a_train.py │  TF-IDF fit + LR/SVC/NB train
+                  └──────────┬────────────┘
+                             │
+           ┌─────────────────┴──────────────────┐
+           ▼                                    ▼
+  ┌─────────────────────┐         ┌──────────────────────────┐
+  │ Model A             │         │ Model B                  │
+  │  LR · SVC · NB      │         │  noun-phrase distractors │
+  │  Soft-vote ensemble │         │  LR hint scorer          │
+  │  K-Means            │         │  distractor RF ranker    │
+  │  Label Propagation  │         └──────────────┬───────────┘
+  │  Wh-template gen.   │                        │
+  └─────────┬───────────┘                        │
+            └──────────────────┐  ┌──────────────┘
+                               ▼  ▼
+                   ┌─────────────────────────┐
+                   │  backend/main.py        │
+                   │  FastAPI · 8 endpoints  │
+                   └────────────┬────────────┘
+                                │ JSON / CORS
+                                ▼
+                   ┌─────────────────────────┐
+                   │  frontend/ (Vite/React) │
+                   │  Tailwind · Recharts    │
+                   │  Framer Motion · Zustand│
+                   └─────────────────────────┘
+```
+
+---
+
+## Quick Start (from Submission)
+
+If you have downloaded the submission folder (all model `.pkl` files and `data/val_split.csv` are pre-bundled — **no retraining required**):
 
 ### Requirements
 
-- Python **3.13** (we use 3.13.7; any 3.11+ works after re-pinning)
-- Node **18+** (we use 20)
-- 8 GB RAM minimum. GPU is **optional** — needed only for the BERT/T5
-  baselines (`src/baselines.py`).
+- **Python 3.11+** (tested on 3.13.7)
+- **Node 18+** (tested on 20)
 
-### Windows (PowerShell)
+### 1. Create virtual environment and install dependencies
 
 ```powershell
-git clone <your-fork-url> race_rc_project
-cd race_rc_project
-
-# 1. Python venv
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install --upgrade pip
 python -m pip install -r requirements.txt
-
-# 2. Place the dataset
-#    Download train.csv from
-#    https://www.kaggle.com/datasets/ankitdhiman7/race-dataset
-#    and drop it at  data\train.csv
-
-# 3. Build the splits, features, and models (≈ 25 min on CPU)
-python src\preprocessing.py
-python src\features.py
-python src\model_a_train.py
-python src\model_a_unsupervised.py
-python src\ensemble.py
-python src\model_a_generate.py
-python src\model_b.py
-python src\evaluate_model_b.py
-
-# 4. (Optional, GPU) Neural baselines (~25 min on RTX 3050)
-python -m pip install torch --index-url https://download.pytorch.org/whl/cu121
-python -m pip install transformers==4.46.3 sentencepiece==0.2.0
-python src\baselines.py
-
-# 5. Hyperparameter sweep + final test evaluation
-python src\hyperparameter_sweep.py
-python src\final_evaluation.py
-python src\build_metrics_json.py
-
-# 6. Backend
-python -m uvicorn backend.main:app --reload --port 8000
-
-# 7. Frontend (new shell)
-cd frontend
-npm install
-npm run dev               # http://localhost:5173
 ```
 
-### Linux / macOS
+### 2. Start the backend
 
-Same steps with these differences:
-- `python -m venv .venv && source .venv/bin/activate`
-- Drop the `\` path separators
-- `pip install torch` without the `--index-url` if you don't have CUDA;
-  the `baselines.py` script falls back to CPU automatically (slower).
+```powershell
+# From the project root
+python -m uvicorn backend.main:app --reload --port 8000
+```
+
+API explorer: **http://localhost:8000/docs**
+
+### 3. Start the frontend (new terminal)
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+App: **http://localhost:5173**
 
 ---
 
-## 🗂 Project layout
+## Setup (Full — Train from Scratch)
+
+### Requirements
+
+- **Python 3.11+** (tested on 3.13.7)
+- **Node 18+** (tested on 20)
+- **RAM:** 8 GB minimum (16 GB recommended for the full hyperparameter sweep)
+- **GPU:** Optional — needed only for `src/baselines.py` (BERT + T5)
+
+### 1. Clone and create virtual environment
+
+```powershell
+git clone https://github.com/Hadeeed147/race-rc-project.git
+cd race-rc-project
+
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+### 2. Place the dataset
+
+Download `train.csv` from the
+[RACE Kaggle dataset](https://www.kaggle.com/datasets/ankitdhiman7/race-dataset)
+and place it at:
 
 ```
-race_rc_project/
-├── data/                    train + split CSVs, sparse TF-IDF, label arrays
-├── models/                  every trained pickle + the metrics JSONs
+data/train.csv
+```
+
+### 3. Build splits and train all models (~25 min on CPU)
+
+Run these **in order** from the project root with the venv active:
+
+```powershell
+# Split into train / val / test CSVs + option-level rows
+.\.venv\Scripts\python.exe src/preprocessing.py
+
+# Fit TF-IDF vectorizer + train LR, SVC, NB + save base models
+.\.venv\Scripts\python.exe src/model_a_train.py
+
+# K-Means clustering + Label Propagation (unsupervised / semi-supervised)
+.\.venv\Scripts\python.exe src/model_a_unsupervised.py
+
+# Wh-template question generator + RandomForest ranker
+.\.venv\Scripts\python.exe src/model_a_generate.py
+
+# Distractor pipeline + Hint scorer training
+.\.venv\Scripts\python.exe src/model_b.py
+
+# Hyperparameter sweep (GridSearchCV) + ensemble weight search
+.\.venv\Scripts\python.exe src/hyperparameter_sweep.py
+
+# Final test-set evaluation + publication figures
+.\.venv\Scripts\python.exe src/evaluate.py
+
+# Refresh backend/metrics.json served by GET /analytics
+.\.venv\Scripts\python.exe src/build_metrics_json.py
+```
+
+### 4. (Optional) Neural baselines — requires GPU
+
+```powershell
+python -m pip install torch --index-url https://download.pytorch.org/whl/cu124
+python -m pip install transformers==4.46.3 sentencepiece==0.2.0
+.\.venv\Scripts\python.exe src/baselines.py
+```
+
+> Falls back to CPU automatically if no CUDA GPU is detected (much slower).
+
+### 5. Run the backend
+
+```powershell
+# From the project root
+.\.venv\Scripts\python.exe -m uvicorn backend.main:app --reload --port 8000
+```
+
+API explorer: **http://localhost:8000/docs**
+
+### 6. Run the frontend (separate terminal)
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+App: **http://localhost:5173**
+
+---
+
+## Run Tests
+
+```powershell
+# Inference latency test (verifies < 10s per request requirement)
+.\.venv\Scripts\python.exe tests/test_inference.py
+
+# Backend smoke test
+.\.venv\Scripts\python.exe tests/smoke_test_backend.py
+
+# End-to-end smoke test (requires backend running on port 8000)
+.\.venv\Scripts\python.exe tests/smoke_test_e2e.py
+```
+
+---
+
+## API Endpoints
+
+Base URL: `http://localhost:8000`
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/` | Service banner + endpoint list |
+| `GET` | `/healthz` | `{ok, models_loaded}` liveness check |
+| `GET` | `/sample` | Random RACE val article (no gold question) |
+| `GET` | `/sample_with_question` | Random RACE val row with gold question + options |
+| `POST` | `/generate` | Article → generated question + 4 options + latency |
+| `POST` | `/predict` | Article + question + 4 options → ensemble prediction + per-option scores |
+| `POST` | `/distractors` | Article + correct answer → 3 distractors |
+| `POST` | `/hints` | Article + question → 3 graduated hints (vague / moderate / specific) |
+| `GET` | `/analytics` | Cached val/test metrics for the dashboard |
+
+Every response includes a `latency_ms` field.
+
+---
+
+## Project Structure
+
+```
+race-rc-project/
+├── data/
+│   ├── train.csv                 ← place Kaggle download here
+│   ├── train_split.csv           ← generated by preprocessing.py
+│   ├── val_split.csv
+│   ├── test_split.csv
+│   ├── X_train.npz               ← TF-IDF sparse matrices
+│   ├── X_val.npz
+│   ├── X_test.npz
+│   ├── y_train.npy               ← option-level labels
+│   ├── y_val.npy
+│   └── y_test.npy
+├── models/
+│   ├── tfidf_vectorizer.pkl
+│   ├── ensemble.pkl              ← {models, weights}
+│   ├── hint_scorer.pkl
+│   ├── distractor_ranker.pkl
+│   ├── question_ranker.pkl
+│   ├── kmeans_model.pkl
+│   ├── model_a_metrics.json
+│   ├── model_b_metrics.json
+│   ├── model_a_gen_metrics.json
+│   ├── unsupervised_metrics.json
+│   ├── hyperparameter_sweep.json
+│   └── final_test_metrics.json
 ├── src/
-│   ├── preprocessing.py     80/10/10 split
-│   ├── features.py          option-level reshape + TF-IDF
-│   ├── model_a_train.py     LR · SVC · NB
-│   ├── model_a_unsupervised.py  K-Means · LabelProp · TruncatedSVD
-│   ├── model_b.py           distractors + hints + hint-scorer
-│   ├── ensemble.py          soft-vote ensemble
-│   ├── model_a_generate.py  improved Wh-template generator + RF ranker
-│   ├── evaluate_model_b.py  BLEU / ROUGE / METEOR / R²
-│   ├── baselines.py         BERT-LR + T5-small (GPU)
-│   ├── hyperparameter_sweep.py   GridSearchCV + ensemble-weight search
-│   ├── final_evaluation.py  test-set numbers + figures
-│   ├── build_metrics_json.py    refresh backend/metrics.json
-│   └── append_eda_cells.py
+│   ├── preprocessing.py          80/10/10 split
+│   ├── model_a_train.py          TF-IDF + LR/SVC/NB training
+│   ├── model_a_unsupervised.py   K-Means + Label Propagation
+│   ├── model_a_generate.py       Wh-template generator + RF ranker
+│   ├── model_b.py                Distractors + Hint scorer
+│   ├── hyperparameter_sweep.py   GridSearchCV + ensemble weight search
+│   ├── evaluate.py               Final test-set evaluation + figures
+│   ├── build_metrics_json.py     Refresh backend/metrics.json
+│   └── baselines.py              BERT-LR + T5-small (GPU, optional)
 ├── backend/
-│   ├── main.py              FastAPI app · 7 endpoints · CORS
-│   └── metrics.json         served by GET /analytics
-├── frontend/                Vite · React Router · Tailwind · shadcn-style
+│   ├── main.py                   FastAPI app · 8 endpoints
+│   └── metrics.json              Served by GET /analytics
+├── frontend/                     Vite + React + Tailwind + Recharts
+├── tests/
+│   ├── test_inference.py         Latency test (< 10s requirement)
+│   ├── smoke_test_backend.py     Backend endpoint smoke tests
+│   └── smoke_test_e2e.py         End-to-end smoke tests
 ├── notebooks/
 │   ├── EDA.ipynb
-│   └── figures/             confusion matrix + model comparison + breakdown
-├── requirements.txt         pinned versions
+│   └── figures/                  Confusion matrices + comparison charts
+├── requirements.txt
 └── README.md
 ```
 
 ---
 
-## 🌐 API endpoints (from `backend/main.py`)
+## Reproducibility
 
-| Method | Path | Purpose |
-|--------|------|---------|
-| `GET`  | `/`            | service banner |
-| `GET`  | `/healthz`     | `{ok, models_loaded}` |
-| `GET`  | `/sample`      | random RACE val row (article + gold question + options) |
-| `POST` | `/generate`    | article → generated question + 4 options |
-| `POST` | `/predict`     | article + question + 4 options → ensemble prediction + per-option scores |
-| `POST` | `/distractors` | article + correct answer → 3 distractors |
-| `POST` | `/hints`       | article + question → 3 graduated hints |
-| `GET`  | `/analytics`   | val/test metrics for the dashboard |
-
-Every response includes a `latency_ms` field. The OpenAPI explorer is at
-`http://localhost:8000/docs`.
+- All `random_state` values are pinned to **42**.
+- `requirements.txt` is generated by `pip freeze` — all transitive dependencies are pinned.
+- The test split is **never touched** until `src/evaluate.py` runs.
+- Delete any `.npz` or `.pkl` file and the corresponding script will regenerate it cleanly.
+- GPU step (`src/baselines.py`) is fully optional — the rest of the pipeline runs on CPU only.
 
 ---
 
-## 🔁 Reproducibility
+## Known Limitations
 
-The full pipeline is runnable from a fresh shell with the seven `python
-src/*.py` commands above (in order). All `random_state` values are pinned
-to `42`. `requirements.txt` is generated by `pip freeze` and pins every
-transitive dependency.
-
-> If you delete `data/X_*.npz` or any `.pkl` in `models/`, the relevant
-> script will re-create it. Skip the GPU step entirely if you don't have
-> CUDA — the rest of the pipeline does not depend on it.
-
----
-
-## 🧠 Honest limitations
-
-- **Question generator is template-based**, so generated stems are
-  syntactically clean but lexically formulaic. We compare against
-  T5-small in `models/baselines_metrics.json`.
-- **Hint scorer R² is negative** because the eval gold (sentence-overlap
-  with the *answer*) is a different objective from the training target
-  (top-20% by cosine to the *question*). Documented; not a bug.
-- **Calibrated LinearSVC's `predict()` collapses at threshold 0.5** under
-  the 1:3 imbalance; we side-step this by using `predict_proba` and
-  per-question argmax everywhere.
+- **Template-based generation:** Questions are syntactically clean but lexically formulaic; T5-small beats them by ~0.02 METEOR on the same 200-sample subset.
+- **Hint R² is negative:** The scorer is trained on question-relevance (only information available at inference time) but evaluated against answer-relevance gold. P@3 = 0.74 is the correct headline metric.
+- **Calibrated SVC probabilities:** Sigmoid calibration under 1:3 imbalance pushes probabilities below 0.5 for the correct class; mitigated by per-question argmax.
+- **RACE-only:** No cross-domain validation. Performance on other MCQ datasets is unknown.
 
 ---
 
 ## License
 
-Educational use; dataset license follows the original RACE distribution.
+Educational use only. Dataset license follows the original
+[RACE distribution](http://www.cs.cmu.edu/~glai1/data/race/).
